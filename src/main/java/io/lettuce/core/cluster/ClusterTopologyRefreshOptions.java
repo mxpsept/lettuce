@@ -417,6 +417,7 @@ public class ClusterTopologyRefreshOptions {
      * @return {@code true} it the cluster topology view is updated periodically
      */
     public boolean isPeriodicRefreshEnabled() {
+        // 返回是否定期刷新集群拓扑的标志。
         return periodicRefreshEnabled;
     }
 

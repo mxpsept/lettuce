@@ -156,10 +156,12 @@ class PooledClusterConnectionProvider<K, V>
         return getWriteConnection(slot).toCompletableFuture();
     }
 
+    // 获取写连接
     private CompletableFuture<StatefulRedisConnection<K, V>> getWriteConnection(int slot) {
 
         CompletableFuture<StatefulRedisConnection<K, V>> writer;// avoid races when reconfiguring partitions.
 
+        // 获取写连接
         stateLock.lock();
         try {
             writer = writers[slot];
@@ -167,23 +169,31 @@ class PooledClusterConnectionProvider<K, V>
             stateLock.unlock();
         }
 
+        // 如果写连接为空
         if (writer == null) {
+            // 获取主节点
             RedisClusterNode master = partitions.getMasterBySlot(slot);
+            // 如果主节点为空
             if (master == null) {
+                // 触发槽位未覆盖事件
                 clusterEventListener.onUncoveredSlot(slot);
+                // 返回失败
                 return Futures.failed(new PartitionSelectorException("Cannot determine a partition for slot " + slot + ".",
                         partitions.clone()));
             }
 
-            // Use always host and port for slot-oriented operations. We don't want to get reconnected on a different
-            // host because the nodeId can be handled by a different host.
+            // 获取主节点的URI
             RedisURI uri = master.getUri();
+            // 创建连接键
             ConnectionKey key = new ConnectionKey(ConnectionIntent.WRITE, uri.getHost(), uri.getPort());
 
+            // 异步获取连接
             ConnectionFuture<StatefulRedisConnection<K, V>> future = getConnectionAsync(key);
 
+            // 返回连接
             return future.thenApply(connection -> {
 
+                // 获取写连接
                 stateLock.lock();
                 try {
                     if (writers[slot] == null) {
@@ -197,6 +207,7 @@ class PooledClusterConnectionProvider<K, V>
             }).toCompletableFuture();
         }
 
+        // 返回写连接
         return writer;
     }
 
@@ -443,22 +454,28 @@ class PooledClusterConnectionProvider<K, V>
 
     protected ConnectionFuture<StatefulRedisConnection<K, V>> getConnectionAsync(ConnectionKey key) {
 
+        // 获取连接
         ConnectionFuture<StatefulRedisConnection<K, V>> connectionFuture = connectionProvider.getConnection(key);
+        // 创建一个CompletableFuture对象
         CompletableFuture<StatefulRedisConnection<K, V>> result = new CompletableFuture<>();
 
+        // 处理连接结果
         connectionFuture.handle((connection, throwable) -> {
 
             if (throwable != null) {
 
+                // 如果连接失败，则抛出异常
                 result.completeExceptionally(
                         RedisConnectionException.create(connectionFuture.getRemoteAddress(), Exceptions.bubble(throwable)));
             } else {
+                // 如果连接成功，则返回连接对象
                 result.complete(connection);
             }
 
             return null;
         });
 
+        // 返回连接结果
         return ConnectionFuture.from(connectionFuture.getRemoteAddress(), result);
     }
 
@@ -492,30 +509,43 @@ class PooledClusterConnectionProvider<K, V>
     public CompletableFuture<StatefulRedisConnection<K, V>> getConnectionAsync(ConnectionIntent connectionIntent, String host,
             int port) {
 
+        // 在获取连接之前执行一些操作
         try {
+            // 执行一些操作
             beforeGetConnection(connectionIntent, host, port);
 
+            // 使用连接提供者获取连接，并将其转换为CompletableFuture
             return connectionProvider.getConnection(new ConnectionKey(connectionIntent, host, port)).toCompletableFuture();
         } catch (RedisException e) {
+            // 如果发生RedisException，则抛出该异常
             throw e;
         } catch (RuntimeException e) {
+            // 如果发生RuntimeException，则将其包装为RedisException并抛出
             throw new RedisException(e);
         }
     }
 
+    // 在获取连接之前执行的操作
     private void beforeGetConnection(ConnectionIntent connectionIntent, String host, int port) {
 
+        // 如果调试已启用，则记录获取连接的日志
         if (debugEnabled) {
             logger.debug("getConnection(" + connectionIntent + ", " + host + ", " + port + ")");
         }
 
+        // 获取指定主机和端口的Redis集群节点
         RedisClusterNode redisClusterNode = partitions.getPartition(host, port);
 
+        // 如果Redis集群节点为空
         if (redisClusterNode == null) {
+            // 触发未知节点事件
             clusterEventListener.onUnknownNode();
 
+            // 如果验证集群节点成员资格
             if (validateClusterNodeMembership()) {
+                // 获取主机和端口
                 HostAndPort hostAndPort = HostAndPort.of(host, port);
+                // 抛出连接尝试被拒绝的异常
                 throw connectionAttemptRejected(hostAndPort.toString());
             }
         }

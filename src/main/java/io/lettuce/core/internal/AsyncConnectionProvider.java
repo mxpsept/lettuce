@@ -68,39 +68,51 @@ public class AsyncConnectionProvider<K, T extends AsyncCloseable, F extends Comp
      */
     private Sync<K, T, F> getSynchronizer(K key) {
 
+        // 如果连接提供者已经关闭，则抛出异常
         if (closed) {
             throw new IllegalStateException("ConnectionProvider is already closed");
         }
 
+        // 从connections中获取key对应的Sync对象
         Sync<K, T, F> sync = connections.get(key);
 
+        // 如果connections中存在key对应的Sync对象，则直接返回
         if (sync != null) {
             return sync;
         }
 
+        // 创建一个AtomicBoolean对象，用于标记是否已经创建了Sync对象
         AtomicBoolean atomicBoolean = new AtomicBoolean();
 
+        // 如果connections中不存在key对应的Sync对象，则创建一个新的Sync对象，并放入connections中
         sync = connections.computeIfAbsent(key, connectionKey -> {
 
+            // 创建一个新的Sync对象
             Sync<K, T, F> createdSync = new Sync<>(key, connectionFactory.apply(key));
 
+            // 如果连接提供者已经关闭，则取消创建的Sync对象
             if (closed) {
                 createdSync.cancel();
             }
 
+            // 返回创建的Sync对象
             return createdSync;
         });
 
+        // 如果atomicBoolean的值为false，则将其设置为true，并执行以下操作
         if (atomicBoolean.compareAndSet(false, true)) {
 
+            // 当Sync对象的连接完成时，执行以下操作
             sync.getConnection().whenComplete((c, t) -> {
 
+                // 如果连接失败，则从connections中移除key对应的Sync对象
                 if (t != null) {
                     connections.remove(key);
                 }
             });
         }
 
+        // 返回Sync对象
         return sync;
     }
 

@@ -76,16 +76,22 @@ class ClusterTopologyRefreshScheduler implements Runnable, ClusterEventListener 
 
     protected void activateTopologyRefreshIfNeeded() {
 
+        // 获取客户端选项
         ClusterClientOptions options = clientOptions.get();
+        // 获取拓扑刷新选项
         ClusterTopologyRefreshOptions topologyRefreshOptions = options.getTopologyRefreshOptions();
 
+        // 如果周期性刷新未启用或拓扑刷新已激活，则返回
         if (!topologyRefreshOptions.isPeriodicRefreshEnabled() || clusterTopologyRefreshActivated.get()) {
             return;
         }
 
+        // 如果拓扑刷新未激活，则设置激活状态
         if (clusterTopologyRefreshActivated.compareAndSet(false, true)) {
+            // 在指定的时间间隔内，周期性地执行当前对象
             ScheduledFuture<?> scheduledFuture = genericWorkerPool.scheduleAtFixedRate(this,
                     options.getRefreshPeriod().toNanos(), options.getRefreshPeriod().toNanos(), TimeUnit.NANOSECONDS);
+            // 设置拓扑刷新的定时任务
             clusterTopologyRefreshFuture.set(scheduledFuture);
         }
     }
@@ -175,18 +181,25 @@ class ClusterTopologyRefreshScheduler implements Runnable, ClusterEventListener 
     @Override
     public void onUnknownNode() {
 
+        // 如果启用了ClusterTopologyRefreshOptions.RefreshTrigger.UNKNOWN_NODE
         if (isEnabled(ClusterTopologyRefreshOptions.RefreshTrigger.UNKNOWN_NODE)) {
+            // 如果指示拓扑刷新信号
             if (indicateTopologyRefreshSignal()) {
+                // 发出自适应刷新计划事件
                 emitAdaptiveRefreshScheduledEvent(ClusterTopologyRefreshOptions.RefreshTrigger.UNKNOWN_NODE);
             }
         }
     }
 
+// 根据触发器触发自适应刷新事件
     private void emitAdaptiveRefreshScheduledEvent(ClusterTopologyRefreshOptions.RefreshTrigger trigger) {
+        // 记录调试信息
         logger.debug("Adaptive refresh event due to: {}", trigger);
 
+        // 创建自适应刷新触发事件
         AdaptiveRefreshTriggeredEvent event = new AdaptiveRefreshTriggeredEvent(partitions, this::scheduleRefresh, trigger);
 
+        // 发布事件
         clientResources.eventBus().publish(event);
     }
 
@@ -223,11 +236,14 @@ class ClusterTopologyRefreshScheduler implements Runnable, ClusterEventListener 
 
     private boolean scheduleRefresh() {
 
+        // 判断事件循环是否处于活动状态
         if (isEventLoopActive()) {
+            // 提交集群拓扑刷新任务
             clientResources.eventExecutorGroup().submit(clusterTopologyRefreshTask);
             return true;
         }
 
+        // 如果事件循环不处于活动状态，则记录调试信息
         logger.debug("ClusterTopologyRefresh is disabled");
         return false;
     }
@@ -323,11 +339,13 @@ class ClusterTopologyRefreshScheduler implements Runnable, ClusterEventListener 
 
         public void run() {
 
+            // 如果compareAndSet方法返回true，则执行doRun方法
             if (compareAndSet(false, true)) {
                 doRun();
                 return;
             }
 
+            // 如果compareAndSet方法返回false，则输出debug日志
             if (logger.isDebugEnabled()) {
                 logger.debug("ClusterTopologyRefreshTask already in progress");
             }
@@ -335,19 +353,24 @@ class ClusterTopologyRefreshScheduler implements Runnable, ClusterEventListener 
 
         void doRun() {
 
+            // 如果logger的debug级别开启，则输出debug信息
             if (logger.isDebugEnabled()) {
                 logger.debug("ClusterTopologyRefreshTask requesting partitions");
             }
             try {
+                // 异步加载拓扑结构
                 reloadTopologyAsync.get().whenComplete((ignore, throwable) -> {
 
+                    // 如果加载过程中出现异常，则输出warn信息
                     if (throwable != null) {
                         logger.warn("Cannot refresh Redis Cluster topology", throwable);
                     }
 
+                    // 设置拓扑结构
                     set(false);
                 });
             } catch (Exception e) {
+                // 如果加载过程中出现异常，则输出warn信息
                 logger.warn("Cannot refresh Redis Cluster topology", e);
             }
         }

@@ -93,27 +93,33 @@ class ClusterFutureSyncInvocationHandler<K, V> extends AbstractInvocationHandler
 
         try {
 
+            // 如果方法是默认方法，则从缓存中查找并调用
             if (method.isDefault()) {
                 return methodHandleCache.computeIfAbsent(method, ClusterFutureSyncInvocationHandler::lookupDefaultMethod)
                         .bindTo(proxy).invokeWithArguments(args);
             }
 
+            // 如果方法是getConnection，并且参数长度大于0，则调用getConnection方法
             if (method.getName().equals("getConnection") && args.length > 0) {
                 return getConnection(method, args);
             }
 
+            // 如果方法是readonly，并且参数长度为1，则调用nodes方法，连接意图为READ
             if (method.getName().equals("readonly") && args.length == 1) {
                 return nodes((Predicate<RedisClusterNode>) args[0], ConnectionIntent.READ, false);
             }
 
+            // 如果方法是nodes，并且参数长度为1，则调用nodes方法，连接意图为WRITE
             if (method.getName().equals("nodes") && args.length == 1) {
                 return nodes((Predicate<RedisClusterNode>) args[0], ConnectionIntent.WRITE, false);
             }
 
+            // 如果方法是nodes，并且参数长度为2，则调用nodes方法，连接意图为WRITE，第二个参数为Boolean类型
             if (method.getName().equals("nodes") && args.length == 2) {
                 return nodes((Predicate<RedisClusterNode>) args[0], ConnectionIntent.WRITE, (Boolean) args[1]);
             }
 
+            // 从缓存中查找目标方法
             Method targetMethod = apiMethodCache.computeIfAbsent(method, key -> {
 
                 try {
@@ -123,18 +129,27 @@ class ClusterFutureSyncInvocationHandler<K, V> extends AbstractInvocationHandler
                 }
             });
 
+            // 调用目标方法
             Object result = targetMethod.invoke(asyncApi, args);
 
+            // 如果返回结果为RedisFuture类型，则等待结果
+            // 判断result是否为RedisFuture类型
             if (result instanceof RedisFuture) {
+                // 将result转换为RedisFuture类型
                 RedisFuture<?> command = (RedisFuture<?>) result;
+
                 if (!method.getName().equals("exec") && !method.getName().equals("multi")) {
+                    // 判断connection是否为StatefulRedisConnection类型，并且是否处于multi状态
                     if (connection instanceof StatefulRedisConnection && ((StatefulRedisConnection) connection).isMulti()) {
+                        // 如果是，则返回null
                         return null;
                     }
                 }
+                // 否则，调用Futures.awaitOrCancel方法，等待command执行完成，或者取消
                 return Futures.awaitOrCancel(command, getTimeoutNs(command), TimeUnit.NANOSECONDS);
             }
 
+            // 返回结果
             return result;
 
         } catch (InvocationTargetException e) {

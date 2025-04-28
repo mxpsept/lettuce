@@ -423,16 +423,22 @@ public abstract class AbstractRedisClient implements AutoCloseable {
     private void initializeChannelAsync0(ConnectionBuilder connectionBuilder, CompletableFuture<Channel> channelReadyFuture,
             SocketAddress redisAddress) {
 
+        // 打印日志，记录连接Redis的地址
         logger.debug("Connecting to Redis at {}", redisAddress);
 
+        // 获取Redis的Bootstrap
         Bootstrap redisBootstrap = connectionBuilder.bootstrap();
 
+        // 构建ChannelInitializer
         ChannelInitializer<Channel> initializer = connectionBuilder.build(redisAddress);
         redisBootstrap.handler(initializer);
 
+        // 调用nettyCustomizer方法，对Bootstrap进行自定义
         clientResources.nettyCustomizer().afterBootstrapInitialized(redisBootstrap);
+        // 连接Redis
         ChannelFuture connectFuture = redisBootstrap.connect(redisAddress);
 
+        // 当channelReadyFuture完成时，如果抛出CancellationException，则取消connectFuture
         channelReadyFuture.whenComplete((c, t) -> {
 
             if (t instanceof CancellationException) {
@@ -440,44 +446,62 @@ public abstract class AbstractRedisClient implements AutoCloseable {
             }
         });
 
+        // 当connectFuture完成时，处理连接结果
         connectFuture.addListener(future -> {
 
+            // 获取连接的Channel
             Channel channel = connectFuture.channel();
+            // 如果连接失败
             if (!future.isSuccess()) {
 
+                // 获取失败原因
                 Throwable cause = future.cause();
+                // 获取初始化失败的原因
                 Throwable detail = channel.attr(ConnectionBuilder.INIT_FAILURE).get();
 
+                // 如果初始化失败的原因存在，则将连接失败的原因添加到初始化失败的原因中
                 if (detail != null) {
                     detail.addSuppressed(cause);
                     cause = detail;
                 }
 
+                // 打印日志，记录连接失败的原因
                 logger.debug("Connecting to Redis at {}: {}", redisAddress, cause);
+                // 将连接失败的原因抛出
                 connectionBuilder.endpoint().initialState();
                 channelReadyFuture.completeExceptionally(cause);
                 return;
             }
 
+            // 获取RedisHandshakeHandler
             RedisHandshakeHandler handshakeHandler = channel.pipeline().get(RedisHandshakeHandler.class);
 
+            // 如果RedisHandshakeHandler不存在，则抛出异常
             if (handshakeHandler == null) {
                 channelReadyFuture.completeExceptionally(new IllegalStateException("RedisHandshakeHandler not registered"));
                 return;
             }
 
+            // 当RedisHandshakeHandler初始化完成时，处理初始化结果
             handshakeHandler.channelInitialized().whenComplete((success, throwable) -> {
 
+                // 如果初始化成功
                 if (throwable == null) {
 
+                    // 打印日志，记录连接成功
                     logger.debug("Connecting to Redis at {}: Success", redisAddress);
+                    // 获取RedisChannelHandler
                     RedisChannelHandler<?, ?> connection = connectionBuilder.connection();
+                    // 注册关闭资源
                     connection.registerCloseables(closeableResources, connection);
+                    // 完成channelReadyFuture
                     channelReadyFuture.complete(channel);
                     return;
                 }
 
+                // 打印日志，记录初始化失败的原因
                 logger.debug("Connecting to Redis at {}, initialization: {}", redisAddress, throwable);
+                // 将初始化失败的原因抛出
                 connectionBuilder.endpoint().initialState();
                 channelReadyFuture.completeExceptionally(throwable);
             });

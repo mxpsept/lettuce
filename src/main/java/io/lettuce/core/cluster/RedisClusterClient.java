@@ -330,9 +330,9 @@ public class RedisClusterClient extends AbstractRedisClient {
     }
 
     /**
-     * 检索群集视图。分区在此客户端实例打开的所有连接之间共享。
+     * Retrieve the cluster view. Partitions are shared amongst all connections opened by this client instance.
      *
-     * @return 分区。
+     * @return the partitions.
      */
     public Partitions getPartitions() {
         if (partitions == null) {
@@ -924,53 +924,43 @@ public class RedisClusterClient extends AbstractRedisClient {
     }
 
     /**
-     * 异步刷新Redis集群分区
+     * Asynchronously reload partitions and re-initialize the distribution table.
      *
-     * @return CompletionStage&lt;Void&gt; 完成时返回的CompletionStage
+     * @return a {@link CompletionStage} that signals completion.
+     * @since 6.0
      */
     public CompletionStage<Void> refreshPartitionsAsync() {
 
-        // 创建一个列表来存储拓扑刷新源
         List<RedisURI> sources = new ArrayList<>();
 
-        // 获取拓扑刷新源
         Iterable<RedisURI> topologyRefreshSource = getTopologyRefreshSource();
         for (RedisURI redisURI : topologyRefreshSource) {
             sources.add(redisURI);
         }
 
-        // 记录拓扑刷新事件
         EventRecorder.RecordableEvent event = EventRecorder.getInstance().start(new TopologyRefreshEvent(sources));
 
-        // 如果分区未初始化，则初始化分区并更新缓存
         if (partitions == null) {
             return initializePartitions().thenAccept(Partitions::updateCache)
                     .whenComplete((unused, throwable) -> event.record());
         }
 
-        // 异步加载分区
         return loadPartitionsAsync().thenAccept(loadedPartitions -> {
 
-            // 如果分区已更改，则使用新的集群拓扑
             if (TopologyComparators.isChanged(getPartitions(), loadedPartitions)) {
 
                 logger.debug("Using a new cluster topology");
 
-                // 记录旧的和新的拓扑
                 List<RedisClusterNode> before = new ArrayList<>(getPartitions());
                 List<RedisClusterNode> after = new ArrayList<>(loadedPartitions);
 
-                // 发布集群拓扑更改事件
                 getResources().eventBus().publish(new ClusterTopologyChangedEvent(before, after));
             }
 
-            // 更新分区
             this.partitions.reload(loadedPartitions.getPartitions());
-            // 更新连接中的分区
             updatePartitionsInConnections();
         }).whenComplete((unused, throwable) -> event.record());
     }
-
 
     /**
      * Suspend periodic topology refresh if it was activated previously. Suspending cancels the periodic schedule without

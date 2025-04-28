@@ -142,22 +142,28 @@ public class Partitions implements Collection<RedisClusterNode> {
      */
     public RedisClusterNode getPartition(String host, int port) {
 
+        // 遍历nodeReadView中的所有RedisClusterNode
         for (RedisClusterNode partition : nodeReadView) {
 
+            // 获取RedisClusterNode的URI
             RedisURI uri = partition.getUri();
 
+            // 如果URI匹配host和port，则返回该RedisClusterNode
             if (matches(uri, host, port)) {
                 return partition;
             }
 
+            // 遍历RedisClusterNode的别名
             for (RedisURI redisURI : partition.getAliases()) {
 
+                // 如果别名匹配host和port，则返回该RedisClusterNode
                 if (matches(redisURI, host, port)) {
                     return partition;
                 }
             }
         }
 
+        // 如果没有找到匹配的RedisClusterNode，则返回null
         return null;
     }
 

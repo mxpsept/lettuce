@@ -115,28 +115,43 @@ public class ConnectionBuilder {
 
     protected List<ChannelHandler> buildHandlers() {
 
+        // 断言channelGroup不为空
         LettuceAssert.assertState(channelGroup != null, "ChannelGroup must be set");
+        // 断言connectionEvents不为空
         LettuceAssert.assertState(connectionEvents != null, "ConnectionEvents must be set");
+        // 断言connection不为空
         LettuceAssert.assertState(connection != null, "Connection must be set");
+        // 断言clientResources不为空
         LettuceAssert.assertState(clientResources != null, "ClientResources must be set");
+        // 断言endpoint不为空
         LettuceAssert.assertState(endpoint != null, "Endpoint must be set");
+        // 断言connectionInitializer不为空
         LettuceAssert.assertState(connectionInitializer != null, "ConnectionInitializer must be set");
 
+        // 创建一个ChannelHandler列表
         List<ChannelHandler> handlers = new ArrayList<>();
 
+        // 设置连接的选项
         connection.setOptions(clientOptions);
 
+        // 添加ChannelGroup监听器
         handlers.add(new ChannelGroupListener(channelGroup, clientResources.eventBus()));
+        // 添加命令编码器
         handlers.add(new CommandEncoder());
+        // 添加握手处理器
         handlers.add(getHandshakeHandler());
+        // 添加命令处理器
         handlers.add(commandHandlerSupplier.get());
 
+        // 添加连接事件触发器
         handlers.add(new ConnectionEventTrigger(connectionEvents, connection, clientResources.eventBus()));
 
+        // 如果自动重连选项为true，则添加连接看门狗
         if (clientOptions.isAutoReconnect()) {
             handlers.add(createConnectionWatchdog());
         }
 
+        // 返回ChannelHandler列表
         return handlers;
     }
 

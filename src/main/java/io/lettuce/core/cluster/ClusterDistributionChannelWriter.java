@@ -118,55 +118,85 @@ class ClusterDistributionChannelWriter implements RedisChannelWriter {
 
     private <K, V, T> RedisCommand<K, V, T> doWrite(RedisCommand<K, V, T> command) {
 
+        // 如果命令是ClusterCommand类型且未完成
         if (command instanceof ClusterCommand && !command.isDone()) {
 
+            // 将命令转换为ClusterCommand类型
             ClusterCommand<K, V, T> clusterCommand = (ClusterCommand<K, V, T>) command;
+
             if (clusterCommand.isMoved() || clusterCommand.isAsk()) {
 
+                // 获取目标主机和端口
                 HostAndPort target;
+                // 是否询问
                 boolean asking;
+                // 获取第一个编码的键
                 ByteBuffer firstEncodedKey = clusterCommand.getArgs().getFirstEncodedKey();
+                // 键的字符串表示
                 String keyAsString = null;
+                // 键的槽位
                 int slot = -1;
+                // 如果第一个编码的键不为空
                 if (firstEncodedKey != null) {
+                    // 标记当前位置
                     firstEncodedKey.mark();
+                    // 将第一个编码的键解码为字符串
                     keyAsString = StringCodec.UTF8.decodeKey(firstEncodedKey);
+                    // 重置当前位置
                     firstEncodedKey.reset();
+                    // 获取键的槽位
                     slot = getSlot(firstEncodedKey);
                 }
 
+                // 如果命令被移动
                 if (clusterCommand.isMoved()) {
 
+                    // 获取移动目标
                     target = getMoveTarget(partitions, clusterCommand.getError());
+                    // 触发移动重定向事件
                     clusterEventListener.onMovedRedirection();
+                    // 设置询问为false
                     asking = false;
 
+                    // 发布移动重定向事件
                     publish(new MovedRedirectionEvent(clusterCommand.getType().toString(), keyAsString, slot,
                             clusterCommand.getError()));
                 } else {
+                    // 获取询问目标
                     target = getAskTarget(clusterCommand.getError());
+                    // 设置询问为true
                     asking = true;
+                    // 触发询问重定向事件
                     clusterEventListener.onAskRedirection();
+                    // 发布询问重定向事件
                     publish(new AskRedirectionEvent(clusterCommand.getType().toString(), keyAsString, slot,
                             clusterCommand.getError()));
                 }
 
+                // 设置命令的错误为null
                 command.getOutput().setError((String) null);
 
+                // 异步获取连接
                 CompletableFuture<StatefulRedisConnection<K, V>> connectFuture = asyncClusterConnectionProvider
                         .getConnectionAsync(ConnectionIntent.WRITE, target.getHostText(), target.getPort());
 
+                // 如果连接成功
                 if (isSuccessfullyCompleted(connectFuture)) {
+                    // 写入命令
                     writeCommand(command, asking, connectFuture.join(), null);
                 } else {
+                    // 当连接完成时写入命令
                     connectFuture.whenComplete((connection, throwable) -> writeCommand(command, asking, connection, throwable));
                 }
 
+                // 返回命令
                 return command;
             }
         }
 
+        // 获取要发送的命令
         ClusterCommand<K, V, T> commandToSend = getCommandToSend(command);
+        // 获取命令的参数
         CommandArgs<K, V> args = command.getArgs();
 
         // exclude CLIENT commands from cluster routing

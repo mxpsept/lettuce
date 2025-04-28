@@ -225,15 +225,19 @@ public abstract class Futures {
      * @return Result of the command.
      * @since 6.0
      */
+    // 等待RedisFuture命令执行，如果超时则取消命令并抛出超时异常
     public static <T> T awaitOrCancel(RedisFuture<T> cmd, long timeout, TimeUnit unit) {
 
         try {
+            // 如果超时时间大于0且命令未在指定时间内完成，则取消命令并抛出超时异常
             if (timeout > 0 && !cmd.await(timeout, unit)) {
                 cmd.cancel(true);
                 throw ExceptionFactory.createTimeoutException(Duration.ofNanos(unit.toNanos(timeout)));
             }
+            // 返回命令的执行结果
             return cmd.get();
         } catch (Exception e) {
+            // 抛出异常
             throw Exceptions.bubble(e);
         }
     }
